@@ -141,7 +141,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 920px;
+      min-width: 1180px;
     }
 
     th, td {
@@ -165,6 +165,42 @@
 
     td {
       background: rgba(15, 23, 42, .35);
+    }
+
+
+    .phone-link {
+      color: #86EFAC;
+      font-weight: 900;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .phone-link:hover {
+      text-decoration: underline;
+    }
+
+    .items-preview {
+      max-width: 320px;
+      color: #E5E7EB;
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre-line;
+    }
+
+    .items-more {
+      display: inline-block;
+      margin-top: 4px;
+      color: #FCD34D;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .new-row td {
+      background: rgba(37, 99, 235, .13);
+    }
+
+    .high-value td {
+      box-shadow: inset 3px 0 0 var(--accent);
     }
 
     .order-id {
@@ -396,6 +432,8 @@
             <tr>
               <th>Order</th>
               <th>Customer</th>
+              <th>Phone</th>
+              <th>Items</th>
               <th>Date</th>
               <th>Total</th>
               <th>Status</th>
@@ -564,6 +602,15 @@
 
       filtered.forEach(order => {
         const tr = document.createElement('tr');
+        const cleanPhone = String(order.customerPhone || '').replace(/\D/g, '');
+        const itemPreview = buildItemsPreview(order.items);
+        const rowStatus = String(order.status || '');
+        const isNewish = ['WhatsApp Draft Created', 'New'].includes(rowStatus);
+        const isHighValue = Number(order.total || 0) >= 2000;
+
+        if (isNewish) tr.classList.add('new-row');
+        if (isHighValue) tr.classList.add('high-value');
+
         tr.innerHTML = `
           <td>
             <div class="order-id">${escapeHtml(order.orderId)}</div>
@@ -571,7 +618,17 @@
           </td>
           <td>
             <strong>${escapeHtml(order.customerName)}</strong>
-            <div class="muted">${escapeHtml(order.customerPhone || '')}</div>
+            <div class="muted">${escapeHtml(order.customerAddress || '')}</div>
+          </td>
+          <td>
+            ${cleanPhone
+              ? `<a class="phone-link" href="https://wa.me/${cleanPhone}" target="_blank">${escapeHtml(order.customerPhone)}</a>`
+              : '<span class="muted">No phone</span>'
+            }
+          </td>
+          <td>
+            <div class="items-preview">${itemPreview.html}</div>
+            ${itemPreview.more ? `<span class="items-more">${itemPreview.more}</span>` : ''}
           </td>
           <td>
             ${formatDate(order.timestamp)}
@@ -591,6 +648,39 @@
         `;
         body.appendChild(tr);
       });
+    }
+
+    function buildItemsPreview(itemsText) {
+      const raw = String(itemsText || '').trim();
+
+      if (!raw) {
+        return {
+          html: '<span class="muted">No items recorded</span>',
+          more: ''
+        };
+      }
+
+      const lines = raw
+        .split(/\n+/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+      const previewLines = lines.slice(0, 3).map(line => {
+        let clean = line
+          .replace(/\s*\|\s*/g, ' • ')
+          .replace(/Price:/gi, '@')
+          .replace(/Subtotal:/gi, 'Sub:')
+          .replace(/Qty:/gi, 'Qty:');
+
+        return escapeHtml(clean);
+      });
+
+      const moreCount = lines.length - previewLines.length;
+
+      return {
+        html: previewLines.join('\n'),
+        more: moreCount > 0 ? `+${moreCount} more item${moreCount === 1 ? '' : 's'}` : ''
+      };
     }
 
     function matchesDateFilter(timestamp, filter) {
