@@ -168,6 +168,62 @@
     }
 
 
+
+    .workflow-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      min-width: 220px;
+    }
+
+    .workflow-btn {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.92);
+      color: #111827;
+      font-size: 11px;
+      font-weight: 950;
+      padding: 7px 8px;
+      border-radius: 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: transform .08s ease, filter .15s ease;
+    }
+
+    .workflow-btn:hover { filter: brightness(1.05); }
+    .workflow-btn:active { transform: scale(.97); }
+    .workflow-btn.contact { background: #DBEAFE; color: #1D4ED8; }
+    .workflow-btn.preparing { background: #FEF3C7; color: #92400E; }
+    .workflow-btn.ready { background: #DCFCE7; color: #166534; }
+    .workflow-btn.delivered { background: #D1FAE5; color: #065F46; }
+
+    .template-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .template-btn {
+      border: 1px solid var(--line);
+      background: rgba(15, 23, 42, .9);
+      color: white;
+      font-size: 11px;
+      font-weight: 900;
+      padding: 7px 9px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .saving-flash {
+      animation: savingFlash .7s ease;
+    }
+
+    @keyframes savingFlash {
+      0% { outline: 0 solid rgba(245, 158, 11, 0); }
+      40% { outline: 3px solid rgba(245, 158, 11, .45); }
+      100% { outline: 0 solid rgba(245, 158, 11, 0); }
+    }
+
     .phone-link {
       color: #86EFAC;
       font-weight: 900;
@@ -437,6 +493,7 @@
               <th>Date</th>
               <th>Total</th>
               <th>Status</th>
+              <th>Workflow</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -498,6 +555,16 @@
           <div class="detail-label" style="margin-bottom:6px;">Notes</div>
           <textarea id="modalNotes" rows="4" placeholder="Internal notes..."></textarea>
         </label>
+
+        <div>
+          <div class="detail-label" style="margin-bottom:6px;">WhatsApp Templates</div>
+          <div class="template-actions">
+            <button class="template-btn" onclick="sendTemplateCurrent('received')">Received</button>
+            <button class="template-btn" onclick="sendTemplateCurrent('preparing')">Preparing</button>
+            <button class="template-btn" onclick="sendTemplateCurrent('ready')">Ready</button>
+            <button class="template-btn" onclick="sendTemplateCurrent('delivered')">Delivered</button>
+          </div>
+        </div>
 
         <div class="modal-actions">
           <button class="save" onclick="saveOrderChanges()">Save Changes</button>
@@ -640,9 +707,17 @@
             <span class="status ${statusClass(order.status)}">${escapeHtml(order.status || '')}</span>
           </td>
           <td>
+            <div class="workflow-actions">
+              <button class="workflow-btn contact" onclick="quickWorkflow('${escapeJs(order.orderId)}', 'Contacted', 'received')">Contacted</button>
+              <button class="workflow-btn preparing" onclick="quickWorkflow('${escapeJs(order.orderId)}', 'Preparing', 'preparing')">Preparing</button>
+              <button class="workflow-btn ready" onclick="quickWorkflow('${escapeJs(order.orderId)}', 'Ready', 'ready')">Ready</button>
+              <button class="workflow-btn delivered" onclick="quickWorkflow('${escapeJs(order.orderId)}', 'Delivered', 'delivered')">Delivered</button>
+            </div>
+          </td>
+          <td>
             <div class="actions">
               <button class="small-btn" onclick="openOrder('${escapeJs(order.orderId)}')">Open</button>
-              <button class="small-btn wa" onclick="whatsappCustomer('${escapeJs(order.customerPhone)}', '${escapeJs(order.customerName)}')">WhatsApp</button>
+              <button class="small-btn wa" onclick="sendTemplate('${escapeJs(order.orderId)}', 'received')">WhatsApp</button>
             </div>
           </td>
         `;
@@ -747,6 +822,98 @@
       closeModal();
     }
 
+    async function quickWorkflow(orderId, newStatus, templateType) {
+      const order = orders.find(o => o.orderId === orderId);
+      if (!order) return;
+
+      const response = await apiCall('adminUpdateOrder', {
+        orderId,
+        status: newStatus,
+        notes: order.notes || ''
+      });
+
+      if (!response || !response.ok) {
+        alert(response && response.error ? response.error : 'Could not update order.');
+        return;
+      }
+
+      order.status = newStatus;
+      renderOrders();
+
+      const panel = document.querySelector('.panel');
+      if (panel) {
+        panel.classList.remove('saving-flash');
+        void panel.offsetWidth;
+        panel.classList.add('saving-flash');
+      }
+
+      sendTemplate(orderId, templateType);
+    }
+
+    function sendTemplateCurrent(type) {
+      if (!currentOrder) return;
+      sendTemplate(currentOrder.orderId, type);
+    }
+
+    function sendTemplate(orderId, type) {
+      const order = orders.find(o => o.orderId === orderId);
+      if (!order) return;
+
+      const clean = String(order.customerPhone || '').replace(/\D/g, '');
+
+      if (!clean) {
+        alert('No phone number available.');
+        return;
+      }
+
+      const message = buildTemplateMessage(order, type);
+      window.open(`https://wa.me/${clean}?text=${encodeURIComponent(message)}`, '_blank');
+    }
+
+    function buildTemplateMessage(order, type) {
+      const name = order.customerName || '';
+      const orderId = order.orderId || '';
+      const total = formatMoney(order.total, order.currency || 'SRD');
+
+      const templates = {
+        received:
+`Hi ${name},
+
+We received your order ${orderId}.
+We will review it and get back to you shortly.
+
+Estimated total: ${total}
+
+Thank you.`,
+
+        preparing:
+`Hi ${name},
+
+Your order ${orderId} is now being prepared.
+
+We will let you know once it is ready.`,
+
+        ready:
+`Hi ${name},
+
+Your order ${orderId} is ready.
+
+Please let us know if you will pick it up or if delivery is needed.
+
+Total: ${total}`,
+
+        delivered:
+`Hi ${name},
+
+Thank you for your order ${orderId}.
+We appreciate your purchase.
+
+Hope to serve you again soon.`
+      };
+
+      return templates[type] || templates.received;
+    }
+
     function whatsappCurrentCustomer() {
       if (!currentOrder) return;
       whatsappCustomer(currentOrder.customerPhone, currentOrder.customerName);
@@ -759,7 +926,9 @@
         return;
       }
 
-      const msg = `Hi ${name || ''}, regarding your order.`;
+      const msg = currentOrder && currentOrder.orderId
+        ? `Hi ${name || ''}, regarding your order ${currentOrder.orderId}.`
+        : `Hi ${name || ''}, regarding your order.`;
       window.open(`https://wa.me/${clean}?text=${encodeURIComponent(msg)}`, '_blank');
     }
 
